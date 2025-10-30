@@ -1,3 +1,6 @@
+# Author: Alinjar Dan
+# Email: alinjardannitdgp2014@gmail.com
+# GitHub:https://github.com/alinjar1996
 import numpy as np
 from scipy.special import binom
 

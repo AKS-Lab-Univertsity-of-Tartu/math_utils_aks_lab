@@ -1,3 +1,6 @@
+# Author: Alinjar Dan
+# Email: alinjardannitdgp2014@gmail.com
+# GitHub:https://github.com/alinjar1996
 import torch
 from math import comb
 

@@ -238,8 +238,8 @@ def turn_quat_general(p1_init, p2_init, p1_target, p2_target, tray_rot_init):
     # Normalize the final rotation axis
     rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
 
-    print("rotation_angle", rotation_angle)
-    print("rotation_axis", rotation_axis)
+    # print("rotation_angle", rotation_angle)
+    # print("rotation_axis", rotation_axis)
 
     rotation_angle_deg = np.rad2deg(rotation_angle)
 

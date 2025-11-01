@@ -36,47 +36,55 @@ def quat_to_rotmat(quat):
 def rotmat_to_quat(mat):
     """
     Convert a 3x3 rotation matrix to a quaternion (w, x, y, z).
-    Assumes the matrix is a valid rotation matrix.
+    This implements the algorithm using standard NumPy and Python
+    conditional logic, replacing the JAX jnp.where structure.
+
+    Args:
+        mat: A 3x3 numpy array representing the rotation matrix.
+
+    Returns:
+        A 4-element numpy array representing the quaternion (w, x, y, z).
     """
+    # Ensure the matrix is 3x3 and extract it
     m = mat.reshape((3, 3))
+
+    # Calculate the trace (sum of diagonal elements)
     tr = m[0, 0] + m[1, 1] + m[2, 2]
 
-    def case_tr_pos(_):
-        S = jnp.sqrt(tr + 1.0) * 2  # S=4*w
-        w = 0.25 * S
-        x = (m[2, 1] - m[1, 2]) / S
-        y = (m[0, 2] - m[2, 0]) / S
-        z = (m[1, 0] - m[0, 1]) / S
-        return jnp.array([w, x, y, z])
+    # Initialize quaternion variable
+    quat = np.zeros(4, dtype=mat.dtype)
 
-    def case_m00_max(_):
-        S = jnp.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2  # S=4*x
-        w = (m[2, 1] - m[1, 2]) / S
-        x = 0.25 * S
-        y = (m[0, 1] + m[1, 0]) / S
-        z = (m[0, 2] + m[2, 0]) / S
-        return jnp.array([w, x, y, z])
+    if tr > 0:
+        # Case 1: Trace is positive (the common case)
+        S = np.sqrt(tr + 1.0) * 2  # S = 4*w
+        quat[0] = 0.25 * S         # w
+        quat[1] = (m[2, 1] - m[1, 2]) / S # x
+        quat[2] = (m[0, 2] - m[2, 0]) / S # y
+        quat[3] = (m[1, 0] - m[0, 1]) / S # z
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        # Case 2: m[0, 0] is the largest diagonal element
+        S = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2  # S = 4*x
+        quat[0] = (m[2, 1] - m[1, 2]) / S # w
+        quat[1] = 0.25 * S         # x
+        quat[2] = (m[0, 1] + m[1, 0]) / S # y
+        quat[3] = (m[0, 2] + m[2, 0]) / S # z
+    elif m[1, 1] > m[2, 2]:
+        # Case 3: m[1, 1] is the largest diagonal element
+        S = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2  # S = 4*y
+        quat[0] = (m[0, 2] - m[2, 0]) / S # w
+        quat[1] = (m[0, 1] + m[1, 0]) / S # x
+        quat[2] = 0.25 * S         # y
+        quat[3] = (m[1, 2] + m[2, 1]) / S # z
+    else:
+        # Case 4: m[2, 2] is the largest diagonal element
+        S = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2  # S = 4*z
+        quat[0] = (m[1, 0] - m[0, 1]) / S # w
+        quat[1] = (m[0, 2] + m[2, 0]) / S # x
+        quat[2] = (m[1, 2] + m[2, 1]) / S # y
+        quat[3] = 0.25 * S         # z
 
-    def case_m11_max(_):
-        S = jnp.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2  # S=4*y
-        w = (m[0, 2] - m[2, 0]) / S
-        x = (m[0, 1] + m[1, 0]) / S
-        y = 0.25 * S
-        z = (m[1, 2] + m[2, 1]) / S
-        return jnp.array([w, x, y, z])
-
-    def case_m22_max(_):
-        S = jnp.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2  # S=4*z
-        w = (m[1, 0] - m[0, 1]) / S
-        x = (m[0, 2] + m[2, 0]) / S
-        y = (m[1, 2] + m[2, 1]) / S
-        z = 0.25 * S
-        return jnp.array([w, x, y, z])
-
-    quat = jnp.where(tr > 0, case_tr_pos(0),
-            jnp.where((m[0, 0] > m[1, 1]) & (m[0, 0] > m[2, 2]), case_m00_max(0),
-            jnp.where(m[1, 1] > m[2, 2], case_m11_max(0), case_m22_max(0))
-        ))
+    # Normalize the quaternion (optional, but good practice for robustness)
+    quat = quat / np.linalg.norm(quat)
 
     return quat
 

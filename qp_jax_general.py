@@ -17,8 +17,7 @@ import jax.numpy as jnp
 class QP():
 
 	def __init__(self, num_batch, num_dof, nvar, num_total_constraints, rho_ineq,
-			  A_projection, A_control, A_eq, b_control, 
-			  v_max, a_max, j_max, p_max, maxiter_projection):
+			  A_projection, A_control, A_eq, b_control, maxiter_projection):
 		
 		super(QP, self).__init__()
 		
@@ -33,10 +32,6 @@ class QP():
 		self.num_dof = num_dof
 
 		self.num_total_constraints = num_total_constraints
-		self.v_max = v_max
-		self.a_max = a_max
-		self.j_max = j_max
-		self.p_max = p_max
 		self.maxiter_projection = maxiter_projection
 
 		self.compute_boundary_vec_batch = (jax.vmap(self.compute_boundary_vec_single, in_axes = (0)  )) # vmap parrallelization takes place over first axis

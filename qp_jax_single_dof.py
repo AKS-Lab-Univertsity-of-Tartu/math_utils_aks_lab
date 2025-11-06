@@ -21,7 +21,7 @@ class QP():
 	def __init__(self, num_batch, num_dof, nvar_single, num_total_constraints_per_dof, rho_ineq,
 			  A_projection_single_dof, A_control_single_dof, A_eq_single_dof,
 			  v_max, a_max, j_max, p_max, num_pos_constraints, num_vel_constraints,
-			  num_acc_constraints, num_jerk_constraints):
+			  num_acc_constraints, num_jerk_constraints, maxiter_projection):
 		super(QP, self).__init__()
 		
 		self.A_projection_single_dof = A_projection_single_dof

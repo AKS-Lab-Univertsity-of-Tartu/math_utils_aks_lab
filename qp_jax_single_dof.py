@@ -18,8 +18,10 @@ import jax.numpy as jnp
 
 class QP():
 
-	def __init__(self, num_batch, nvar_single, num_total_constraints_per_dof, rho_ineq,
-			  A_projection_single_dof, A_control_single_dof, A_eq_single_dof, b_control_single_dof):
+	def __init__(self, num_batch, num_dof, nvar_single, num_total_constraints_per_dof, rho_ineq,
+			  A_projection_single_dof, A_control_single_dof, A_eq_single_dof,
+			  v_max, a_max, j_max, p_max, num_pos_constraints, num_vel_constraints,
+			  num_acc_constraints, num_jerk_constraints):
 		super(QP, self).__init__()
 		
 		self.A_projection_single_dof = A_projection_single_dof
@@ -28,8 +30,18 @@ class QP():
 		self.rho_ineq = rho_ineq
 		self.nvar_single = nvar_single
 		self.num_batch = num_batch
+		self.num_dof = num_dof
+
 		self.num_total_constraints_per_dof = num_total_constraints_per_dof
-		self.b_control_single_dof = b_control_single_dof
+		self.v_max = v_max
+		self.a_max = a_max
+		self.j_max = j_max
+		self.p_max = p_max
+		self.num_pos_constraints = num_pos_constraints
+		self.num_vel_constraints = num_vel_constraints
+		self.num_acc_constraints = num_acc_constraints
+		self.num_jerk_constraints = num_jerk_constraints
+		
 		
 		self.compute_boundary_vec_batch_single_dof = (jax.vmap(self.compute_boundary_vec_single_dof, in_axes = (0)  )) # vmap parrallelization takes place over first axis
 
@@ -46,9 +58,45 @@ class QP():
 	def compute_feasible_control_single_dof(self, lamda_init_single_dof, s_init_single_dof, 
 										 b_eq_term_single_dof, xi_samples_single_dof, 
 										 init_pos_single_dof):
+		b_vel = jnp.hstack((
+			self.v_max * jnp.ones((self.num_batch, self.num_vel_constraints // (2*self.num_dof))),
+			self.v_max * jnp.ones((self.num_batch, self.num_vel_constraints // (2*self.num_dof)))
+		))
+
+		b_acc = jnp.hstack((
+			self.a_max * jnp.ones((self.num_batch, self.num_acc_constraints // (2*self.num_dof))),
+			self.a_max * jnp.ones((self.num_batch, self.num_acc_constraints // (2*self.num_dof)))
+		))
+
+		b_jerk = jnp.hstack((
+			self.j_max * jnp.ones((self.num_batch, self.num_jerk_constraints // (2*self.num_dof))),
+			self.j_max * jnp.ones((self.num_batch, self.num_jerk_constraints // (2*self.num_dof)))
+		))
+        
+
+		init_pos_single_dof_batch = jnp.tile(init_pos_single_dof, (self.num_batch, 1))  # (num_batch, 1)
+        
+		# Calculate bounds for each joint and each batch
+    	# Upper bounds: p_max - init_pos, Lower bounds: p_max + init_pos (assuming symmetric limits)
+		b_pos_upper = (self.p_max - init_pos_single_dof_batch)  # shape (num_batch, 1)
+		b_pos_lower = (self.p_max + init_pos_single_dof_batch)  # shape (num_batch, 1)
+        
+		
+		# Expand to include time steps
+		b_pos_upper_expanded = jnp.tile(b_pos_upper[:, :, None], (1, 1, self.num_pos_constraints // (self.num_dof * 2)))  # (num_batch, 1, num_pos_constraints per dof/2)
+		b_pos_lower_expanded = jnp.tile(b_pos_lower[:, :, None], (1, 1, self.num_pos_constraints // (self.num_dof * 2)))  # (num_batch, 1, num_pos_constraintsper dof/2)
+		
+		# Stack upper and lower bounds
+		b_pos_stacked = jnp.concatenate([b_pos_upper_expanded, b_pos_lower_expanded], axis=2)  # (num_batch, 1, num_pos_constraints per dof)
+		
+		# Reshape to final form: (num_batch, total_pos_constraints)
+		b_pos = b_pos_stacked.reshape((self.num_batch, -1))  # shape: (num_batch, self.num_pos_constraints per dof)
+        
+		b_control_single_dof = jnp.hstack((b_vel, b_acc, b_jerk, b_pos))
+	
 
 		# Augmented bounds with slack variables
-		b_control_aug_single_dof = self.b_control_single_dof - s_init_single_dof
+		b_control_aug_single_dof = b_control_single_dof - s_init_single_dof
 
 		# Cost matrix
 		cost = (
@@ -78,11 +126,11 @@ class QP():
 		# Update slack variables
 		s = jnp.maximum(
 			jnp.zeros((self.num_batch, self.num_total_constraints_per_dof)),
-			-jnp.dot(self.A_control_single_dof, xi_projected.T).T + self.b_control_single_dof
+			-jnp.dot(self.A_control_single_dof, xi_projected.T).T + b_control_single_dof
 		)
 
 		# Compute residual
-		res_vec = jnp.dot(self.A_control_single_dof, xi_projected.T).T - self.b_control_single_dof + s
+		res_vec = jnp.dot(self.A_control_single_dof, xi_projected.T).T - b_control_single_dof + s
 		res_norm = jnp.linalg.norm(res_vec, axis=1)
 
 		# Update Lagrange multipliers

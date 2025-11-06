@@ -41,6 +41,7 @@ class QP():
 		self.num_vel_constraints = num_vel_constraints
 		self.num_acc_constraints = num_acc_constraints
 		self.num_jerk_constraints = num_jerk_constraints
+		self.maxiter_projection = maxiter_projection
 		
 		
 		self.compute_boundary_vec_batch_single_dof = (jax.vmap(self.compute_boundary_vec_single_dof, in_axes = (0)  )) # vmap parrallelization takes place over first axis

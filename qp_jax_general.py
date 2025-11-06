@@ -109,6 +109,12 @@ class QP():
 	def compute_projection(self, xi_samples, state_term, lamda_init, 
 						   s_init, init_pos):
 		
+		
+		s_init = jnp.maximum(
+			jnp.zeros((self.num_batch, self.num_total_constraints)),
+			s_init
+		)
+		
 		b_eq_term = self.compute_boundary_vec_batch(state_term)  
 
 		xi_projected_init = xi_samples

@@ -94,6 +94,11 @@ class QP():
 		b_pos = b_pos_stacked.reshape((self.num_batch, -1))  # shape: (num_batch, self.num_pos_constraints per dof)
         
 		b_control_single_dof = jnp.hstack((b_vel, b_acc, b_jerk, b_pos))
+		
+		s_init_single_dof = jnp.maximum(
+			jnp.zeros((self.num_batch, self.num_total_constraints_per_dof)),
+			s_init_single_dof
+		)
 	
 
 		# Augmented bounds with slack variables
@@ -147,6 +152,7 @@ class QP():
 									   lamda_init_single_dof, 
 									   s_init_single_dof, 
 									   init_pos_single_dof):
+		
 		
 		# state_term_single_dof: (B, K) → flatten across batch
 		b_eq_term = self.compute_boundary_vec_batch_single_dof(state_term_single_dof)  # should become (B, K), flattened

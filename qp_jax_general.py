@@ -36,13 +36,13 @@ class QP():
 		self.maxiter_projection = maxiter_projection
 
 		self.compute_boundary_vec_batch = (jax.vmap(self.compute_boundary_vec_single, in_axes = (0)  )) # vmap parrallelization takes place over first axis
-		self.cost_mat_inv = self.compute_cost_mat_inv()
+		self.cost_mat = self.compute_cost_mat()
 		# print("self.cost_mat_inv", self.cost_mat_inv)
 		# print("self.cost_mat_inv shape", self.cost_mat_inv.shape)
         
 
 	@partial(jax.jit, static_argnums=(0,))
-	def compute_cost_mat_inv(self):
+	def compute_cost_mat(self):
 		# Cost matrix
 		cost = (
 			jnp.dot(self.A_projection.T, self.A_projection) +
@@ -56,7 +56,8 @@ class QP():
 
 		# jax.debug.print("cost_mat {}", jnp.shape(cost_mat))
 
-		return jnp.linalg.pinv(cost_mat)
+		# return jnp.linalg.pinv(cost_mat)
+		return cost_mat
 
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_boundary_vec_single(self, state_term):
@@ -90,8 +91,8 @@ class QP():
 
 
 		# Solve KKT system
-		# sol = jnp.linalg.solve(cost_mat, jnp.hstack((-lincost, b_eq_term)).T).T
-		sol = (self.cost_mat_inv @ jnp.hstack((-lincost, b_eq_term)).T).T
+		# sol = jnp.linalg.solve(self.cost_mat, jnp.hstack((-lincost, b_eq_term)).T).T
+		sol = (jnp.linalg.pinv(self.cost_mat) @ jnp.hstack((-lincost, b_eq_term)).T).T
 
 		# Extract primal solution
 		xi_projected = sol[:, :self.nvar]

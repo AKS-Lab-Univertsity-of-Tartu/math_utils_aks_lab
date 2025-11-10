@@ -11,6 +11,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import jax.nn
 
 
 
@@ -35,7 +36,28 @@ class QP():
 		self.maxiter_projection = maxiter_projection
 
 		self.compute_boundary_vec_batch = (jax.vmap(self.compute_boundary_vec_single, in_axes = (0)  )) # vmap parrallelization takes place over first axis
-    
+		self.cost_mat_inv = self.compute_cost_mat_inv()
+		# print("self.cost_mat_inv", self.cost_mat_inv)
+		# print("self.cost_mat_inv shape", self.cost_mat_inv.shape)
+        
+
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_cost_mat_inv(self):
+		# Cost matrix
+		cost = (
+			jnp.dot(self.A_projection.T, self.A_projection) +
+			self.rho_ineq * jnp.dot(self.A_control.T, self.A_control)
+		)
+		# KKT system matrix
+		cost_mat = jnp.vstack((
+			jnp.hstack((cost, self.A_eq.T)),
+			jnp.hstack((self.A_eq, jnp.zeros((self.A_eq.shape[0], self.A_eq.shape[0]))))
+		))
+
+		# jax.debug.print("cost_mat {}", jnp.shape(cost_mat))
+
+		return jnp.linalg.pinv(cost_mat)
+
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_boundary_vec_single(self, state_term):
 
@@ -59,13 +81,6 @@ class QP():
 		# Augmented bounds with slack variables
 		b_control_aug = self.b_control - s_init
 
-
-		# Cost matrix
-		cost = (
-			jnp.dot(self.A_projection.T, self.A_projection) +
-			self.rho_ineq * jnp.dot(self.A_control.T, self.A_control)
-		)
-
 		# Linear cost term
 		lincost = (
 			-lamda_init -
@@ -73,28 +88,29 @@ class QP():
 			self.rho_ineq * jnp.dot(self.A_control.T, b_control_aug.T).T
 		)
 
-		# KKT system matrix
-		cost_mat = jnp.vstack((
-			jnp.hstack((cost, self.A_eq.T)),
-			jnp.hstack((self.A_eq, jnp.zeros((self.A_eq.shape[0], self.A_eq.shape[0]))))
-		))
 
-		
 		# Solve KKT system
-		sol = jnp.linalg.solve(cost_mat, jnp.hstack((-lincost, b_eq_term)).T).T
+		# sol = jnp.linalg.solve(cost_mat, jnp.hstack((-lincost, b_eq_term)).T).T
+		sol = (self.cost_mat_inv @ jnp.hstack((-lincost, b_eq_term)).T).T
 
 		# Extract primal solution
 		xi_projected = sol[:, :self.nvar]
 
 		# Update slack variables
-		s = jnp.maximum(
-			jnp.zeros((self.num_batch, self.num_total_constraints)),
-			-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
-		)
+		# s = jnp.maximum(
+		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
+		# 	-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
+		# )
+
+		# s= jax.nn.relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control)
+
+		s = jax.nn.leaky_relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control, negative_slope=-0.001)
 
 		# Compute residual
 		res_vec = jnp.dot(self.A_control, xi_projected.T).T - self.b_control + s
-		res_norm = jnp.linalg.norm(res_vec, axis=1)
+		# res_norm = jnp.linalg.norm(res_vec, axis=1)
+		# res_norm = jnp.square(res_vec, axis=1)
+		res_norm = jnp.sum(res_vec**2, axis=1)
 		
 		lamda = lamda_init - self.rho_ineq * jnp.dot(self.A_control.T, res_vec.T).T
 
@@ -110,10 +126,13 @@ class QP():
 						   s_init, init_pos):
 		
 		
-		s_init = jnp.maximum(
-			jnp.zeros((self.num_batch, self.num_total_constraints)),
-			s_init
-		)
+		# s_init = jnp.maximum(
+		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
+		# 	s_init
+		# )
+
+		# s_init= jax.nn.relu(s_init)
+		s_init= jax.nn.leaky_relu(s_init, negative_slope=-0.001)
 		
 		b_eq_term = self.compute_boundary_vec_batch(state_term)  
 
@@ -129,8 +148,11 @@ class QP():
 			
 			primal_residual = res_projection
 			fixed_point_residual = (
-				jnp.linalg.norm(lamda_prev - lamda, axis=1) +
-				jnp.linalg.norm(s_prev - s, axis=1)
+				# jnp.linalg.norm(lamda_prev - lamda, axis=1) +
+				# jnp.linalg.norm(s_prev - s, axis=1)
+
+				jnp.sum((lamda_prev - lamda)**2, axis=1) +
+				jnp.sum((s_prev - s)**2, axis=1)
 			)
 			return (primal_sol, lamda, s), (primal_residual, fixed_point_residual)
 

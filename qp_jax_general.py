@@ -12,6 +12,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import jax.nn
+from jaxopt import linear_solve
+import lineax as lx
 
 
 
@@ -37,10 +39,14 @@ class QP():
 
 		self.compute_boundary_vec_batch = (jax.vmap(self.compute_boundary_vec_single, in_axes = (0)  )) # vmap parrallelization takes place over first axis
 		self.cost_mat = self.compute_cost_mat()
+		self.cost_mat_inv = jnp.linalg.pinv(self.cost_mat)
 		# print("self.cost_mat_inv", self.cost_mat_inv)
 		# print("self.cost_mat_inv shape", self.cost_mat_inv.shape)
-        
+		self.solve_batched_systems = jax.vmap(self.solve_single_system, in_axes=(0))
 
+
+
+	
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_cost_mat(self):
 		# Cost matrix
@@ -48,16 +54,39 @@ class QP():
 			jnp.dot(self.A_projection.T, self.A_projection) +
 			self.rho_ineq * jnp.dot(self.A_control.T, self.A_control)
 		)
+		# cost += 1e-6 * jnp.eye(cost.shape[0])
+
 		# KKT system matrix
 		cost_mat = jnp.vstack((
 			jnp.hstack((cost, self.A_eq.T)),
 			jnp.hstack((self.A_eq, jnp.zeros((self.A_eq.shape[0], self.A_eq.shape[0]))))
 		))
 
+
 		# jax.debug.print("cost_mat {}", jnp.shape(cost_mat))
 
 		# return jnp.linalg.pinv(cost_mat)
 		return cost_mat
+	@partial(jax.jit, static_argnums=(0,))
+	def solve_single_system(self, b_single):
+		"""Solves the KKT system for a single sample."""
+		# A is (186, 186), b_single is (186,)
+		operator = lx.MatrixLinearOperator(self.cost_mat)
+		
+		# Use your desired iterative solver (e.g., lx.GMRES or lx.BiCGStab)
+		solution = lx.linear_solve(operator, b_single, solver=lx.BiCGStab(rtol=1e-3, atol=1e-3, max_steps=20))
+		# solution = lx.linear_solve(operator, b_single, solver=lx.GMRES(rtol=1e-6, atol=1e-6, max_steps=2000, restart=50))
+
+		
+		# NOTE: You'd replace lx.QR() with lx.GMRES() or lx.BiCGStab()
+		
+		return solution.value # This will be the (186,) solution vector
+		
+	# 2. Vmap the single solve function over the batch axis
+	# This creates a function that takes (1000, 186) and returns (1000, 186)
+	
+	# self.compute_rollout_batch = jax.vmap(self.compute_rollout_single_torque, in_axes = (None, 0, None, None))
+
 
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_boundary_vec_single(self, state_term):
@@ -77,7 +106,10 @@ class QP():
 										 b_eq_term, xi_samples, 
 										 init_pos):
 		
-	
+	    
+		def matvec_fun(x):
+		
+			return  jnp.dot(self.cost_mat, x)
 		
 		# Augmented bounds with slack variables
 		b_control_aug = self.b_control - s_init
@@ -89,23 +121,53 @@ class QP():
 			self.rho_ineq * jnp.dot(self.A_control.T, b_control_aug.T).T
 		)
 
+        
 
-		# Solve KKT system
+
+		# # Solve KKT system
 		# sol = jnp.linalg.solve(self.cost_mat, jnp.hstack((-lincost, b_eq_term)).T).T
-		sol = (jnp.linalg.pinv(self.cost_mat) @ jnp.hstack((-lincost, b_eq_term)).T).T
+		# # # sol = (self.cost_mat_inv @ jnp.hstack((-lincost, b_eq_term)).T).T
+
+		# # jax.debug.print("sol_1 {}", sol.shape)
+
+		# sol =linear_solve.solve_normal_cg(matvec_fun, jnp.hstack((-lincost, b_eq_term)).T, tol=1e-5).T
+		# # jax.debug.print("sol_2 {}", sol.shape)
+
+		# operator = lx.MatrixLinearOperator(self.cost_mat)
+		# # solution = lx.linear_solve(operator, vector, solver=lx.QR())
+
+		# sol = lx.linear_solve(operator, jnp.hstack((-lincost, b_eq_term)).T, solver=lx.QR()).T
+
+		# 🌟 Solve the batched system using the vmapped function
+		B_matrix = jnp.hstack((-lincost, b_eq_term)).T 
+
+        # 🌟 CRITICAL FIX: Transpose B to put the 1000 vectors on the batch axis (axis 0)
+		# b_batched = B_matrix.T  
+		# sol_batched = self.solve_batched_systems(b_batched)
+		# sol = sol_batched
+
+		# sol =linear_solve.solve_normal_cg(matvec_fun, B_matrix, tol=1e-3).T
+
+		sol = jnp.linalg.solve(self.cost_mat, B_matrix).T
+		# sol = (self.cost_mat_inv @ B_matrix).T
+
+		# sol =linear_solve.solve_normal_cg(matvec_fun, B_matrix, tol=1e-5).T
+
+
+
 
 		# Extract primal solution
 		xi_projected = sol[:, :self.nvar]
 
 		# Update slack variables
-		# s = jnp.maximum(
-		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
-		# 	-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
-		# )
+		s = jnp.maximum(
+			jnp.zeros((self.num_batch, self.num_total_constraints)),
+			-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
+		)
 
 		# s= jax.nn.relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control)
 
-		s = jax.nn.leaky_relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control, negative_slope=-0.001)
+		# s = jax.nn.leaky_relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control, negative_slope=-0.001)
 
 		# Compute residual
 		res_vec = jnp.dot(self.A_control, xi_projected.T).T - self.b_control + s
@@ -127,13 +189,13 @@ class QP():
 						   s_init, init_pos):
 		
 		
-		# s_init = jnp.maximum(
-		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
-		# 	s_init
-		# )
+		s_init = jnp.maximum(
+			jnp.zeros((self.num_batch, self.num_total_constraints)),
+			s_init
+		)
 
 		# s_init= jax.nn.relu(s_init)
-		s_init= jax.nn.leaky_relu(s_init, negative_slope=-0.001)
+		# s_init= jax.nn.leaky_relu(s_init, negative_slope=-0.001)
 		
 		b_eq_term = self.compute_boundary_vec_batch(state_term)  
 

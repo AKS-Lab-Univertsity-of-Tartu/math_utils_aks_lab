@@ -44,7 +44,41 @@ class QP():
 		# print("self.cost_mat_inv shape", self.cost_mat_inv.shape)
 		self.solve_batched_systems = jax.vmap(self.solve_single_system, in_axes=(0))
 
+		eigvals, _ = jnp.linalg.eig(self.cost_mat)
+		det_cost = jnp.linalg.det(self.cost_mat)
 
+		# Store them if you want to inspect or reuse
+		self.eigvals = eigvals
+		# self.eigvecs = eigvecs
+		self.det_cost = det_cost
+
+		# jax.debug.print("Eigenvalues: {}", eigvals)
+		# jax.debug.print("len(Eigenvalues): {}", len(eigvals))
+		# jax.debug.print("max(Eigenvalues): {}", max(eigvals))
+		# jax.debug.print("min(Eigenvalues): {}", min(eigvals))
+		# jax.debug.print("Determinant: {}", det_cost)
+    
+	@partial(jax.jit, static_argnums=(0,))
+	def get_rank(self, tol=1e-8):
+		# Compute singular values
+		s = jnp.linalg.svd(self.cost_mat, compute_uv=False)
+		# Count number of singular values greater than tolerance
+		rank = jnp.sum(s > tol)
+		return rank
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def stable_logdet(self):
+		s = jnp.linalg.svd(self.cost_mat, compute_uv=False)
+		# log(det(A)) = sum(log(s_i))
+		logdet = jnp.sum(jnp.log(s + 1e-20))  # avoid log(0)
+		return logdet
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def get_svd(self):
+		s = jnp.linalg.svd(self.cost_mat, compute_uv=False)
+		# log(det(A)) = sum(log(s_i))
+		
+		return s
 
 	
 	@partial(jax.jit, static_argnums=(0,))
@@ -80,12 +114,9 @@ class QP():
 		
 		# NOTE: You'd replace lx.QR() with lx.GMRES() or lx.BiCGStab()
 		
-		return solution.value # This will be the (186,) solution vector
+		return solution.value 
 		
-	# 2. Vmap the single solve function over the batch axis
-	# This creates a function that takes (1000, 186) and returns (1000, 186)
-	
-	# self.compute_rollout_batch = jax.vmap(self.compute_rollout_single_torque, in_axes = (None, 0, None, None))
+
 
 
 	@partial(jax.jit, static_argnums=(0,))
@@ -138,18 +169,19 @@ class QP():
 
 		# sol = lx.linear_solve(operator, jnp.hstack((-lincost, b_eq_term)).T, solver=lx.QR()).T
 
-		# 🌟 Solve the batched system using the vmapped function
+		#  Solve the batched system using the vmapped function
 		B_matrix = jnp.hstack((-lincost, b_eq_term)).T 
 
-        # 🌟 CRITICAL FIX: Transpose B to put the 1000 vectors on the batch axis (axis 0)
+        # CRITICAL FIX: Transpose B to put the 1000 vectors on the batch axis (axis 0)
 		# b_batched = B_matrix.T  
 		# sol_batched = self.solve_batched_systems(b_batched)
 		# sol = sol_batched
 
 		# sol =linear_solve.solve_normal_cg(matvec_fun, B_matrix, tol=1e-3).T
 
-		sol = jnp.linalg.solve(self.cost_mat, B_matrix).T
-		# sol = (self.cost_mat_inv @ B_matrix).T
+		# sol = jnp.linalg.solve(self.cost_mat, B_matrix).T
+		
+		sol = (self.cost_mat_inv @ B_matrix).T
 
 		# sol =linear_solve.solve_normal_cg(matvec_fun, B_matrix, tol=1e-5).T
 

@@ -192,12 +192,12 @@ class QP():
 		xi_projected = sol[:, :self.nvar]
 
 		# Update slack variables
-		s = jnp.maximum(
-			jnp.zeros((self.num_batch, self.num_total_constraints)),
-			-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
-		)
+		# s = jnp.maximum(
+		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
+		# 	-jnp.dot(self.A_control, xi_projected.T).T + self.b_control
+		# )
 
-		# s= jax.nn.relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control)
+		s= jax.nn.relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control)
 
 		# s = jax.nn.leaky_relu(-jnp.dot(self.A_control, xi_projected.T).T + self.b_control, negative_slope=-0.001)
 
@@ -221,12 +221,12 @@ class QP():
 						   s_init, init_pos):
 		
 		
-		s_init = jnp.maximum(
-			jnp.zeros((self.num_batch, self.num_total_constraints)),
-			s_init
-		)
+		# s_init = jnp.maximum(
+		# 	jnp.zeros((self.num_batch, self.num_total_constraints)),
+		# 	s_init
+		# )
 
-		# s_init= jax.nn.relu(s_init)
+		s_init= jax.nn.relu(s_init)
 		# s_init= jax.nn.leaky_relu(s_init, negative_slope=-0.001)
 		
 		b_eq_term = self.compute_boundary_vec_batch(state_term)  

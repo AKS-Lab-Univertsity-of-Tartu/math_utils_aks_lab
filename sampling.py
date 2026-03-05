@@ -12,6 +12,7 @@ import numpy as np
 
 import jax
 import jax.numpy as jnp
+import jax.nn as jnn
 
 
 # # Get the folder containing this script
@@ -98,5 +99,25 @@ class SAMPLING():
 		cov_control = self.repair_cov(cov_control)
 		return mean_control, cov_control
 	
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_adaptive_mean_cov(self,cost_ellite,mean_control_prev,sigma_diag_prev,xi_samples):
+		eps = 1e-4
+		# 2. Evaluate cost
+		costs = cost_ellite  # (batch, num_samples)
+		# 3. Soft weights
+		weights = jnn.softmax(-costs * self.lamda)
+		# 4. Update mean
+		mu_new = jnp.sum(xi_samples * weights[:, None], axis=0)
+		# mu_new = jnp.sum(weights_expanded * xi_samples, axis=1)
+		# 5. Update diagonal covariance
+		# diff = xi_samples - mu_new[:, None]
+		diff = xi_samples - mu_new
+		var_new = jnp.sum(weights[:, None] * (diff ** 2), axis=0)
+		# var_new = jnp.sum(weights_expanded * (diff ** 2), axis=1)
+		# 6. Stabilize
+		# sigma_new = jnp.sqrt(var_new + eps)
+		# sigma_diag = jnp.diag(sigma_new)
+		sigma_new = var_new + eps 
+		sigma_diag = jnp.diag(sigma_new)
+		return mu_new, sigma_diag
 
-	

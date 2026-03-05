@@ -11,8 +11,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import jax.nn
-from jaxopt import linear_solve
-import lineax as lx
+
 
 
 
